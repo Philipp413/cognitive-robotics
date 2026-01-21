@@ -75,7 +75,10 @@ D = 64
 model = spa.SPA()
 
 vocab = spa.Vocabulary(D)
+vocab.parse("YES+NO")
+
 vocab2 = spa.Vocabulary(D,max_similarity=0.1)
+vocab2.parse("G+R+M+Y+B+W")
 
 with model:
     
@@ -91,7 +94,7 @@ with model:
     def move(t, x):
         speed, rotation = x
         dt = 0.001
-        max_speed = 20.0
+        max_speed = 15.0
         max_rotate = 10.0
         body.turn(rotation * dt * max_rotate)
         body.go_forward(speed * dt * max_speed)
@@ -169,7 +172,6 @@ with model:
     
     # TODO: convert 0 to 1 colour input in -1 and 1 range to have large 
     
-    vocab2.parse("G+R+M+Y+B+W")
     model.cc = spa.State(D,vocab=vocab2) # represent the last seen color 
     
     def signal_to_spa(xs):
@@ -206,7 +208,6 @@ with model:
     nengo.Connection(current_color, model.cc.input,function=signal_to_spa)
     
     # spa State = represent a vector, optionally with memory to remember the vector. 
-    vocab.parse("YES+NO")
     model.seen_red = spa.State(D,vocab=vocab) # represent the last seen color 
     
     model.cleanup = spa.AssociativeMemory(input_vocab=vocab, wta_output=True)
@@ -237,15 +238,83 @@ with model:
     # if input == color : set state to NO
     # if input == white: set state to YES
     # use signal delays to time everything
+    model.seen_white = spa.State(D,vocab=vocab)
+    
+    model.cleanup_sw = spa.AssociativeMemory(input_vocab=vocab, wta_output=True)
+    nengo.Connection(model.cleanup_sw.output, model.seen_white.input, synapse=0.01)
+    nengo.Connection(model.seen_white.output, model.cleanup_sw.input, synapse=0.01)
+    
+    actions_sw = spa.Actions(
+        'dot(cc, R) --> seen_white=10*NO',
+        'dot(cc, G) --> seen_white=10*NO',
+        'dot(cc, B) --> seen_white=10*NO',
+        'dot(cc, M) --> seen_white=10*NO',
+        'dot(cc, Y) --> seen_white=10*NO',
+        'dot(cc, W) --> seen_white=10*YES',
+        '0.5 --> '
+        )
+    
+    model.bg_sw = spa.BasalGanglia(actions_sw)
+    model.thalamus_sw = spa.Thalamus(model.bg_sw)
     
     # increase_counter? neuron:
     # (last_seen=RED x curr_color=RED) and (seen_white) -> redCounter +=1 
     # (last_seen=RED x curr_color=Any different) -> Any different Counter +=1 
+    # have one counter per color. One counter is flicker wheel
+    model.increase_red_counter = spa.State(D,vocab=vocab)
+    model.increase_green_counter = spa.State(D,vocab=vocab)
+    model.increase_blue_counter = spa.State(D,vocab=vocab)
+    model.increase_magenta_counter = spa.State(D,vocab=vocab)
+    model.increase_yellow_counter = spa.State(D,vocab=vocab)
     
-    # todo: find out how the spa stuff can output something 
+    actions_ic = spa.Actions( # TODO: maybe use spa and gate
+        'dot(seen_red, YES) + dot(cc, R) + dot(seen_white, YES) --> increase_red_counter=10*YES',
+        'dot(seen_red, YES) + dot(cc, G) --> increase_green_counter=10*YES',
+        'dot(seen_red, YES) + dot(cc, B) --> increase_blue_counter=10*YES',
+        'dot(seen_red, YES) + dot(cc, M) --> increase_magenta_counter=10*YES',
+        'dot(seen_red, YES) + dot(cc, Y) --> increase_yellow_counter=10*YES',
+        '0.5 --> increase_red_counter=NO, increase_green_counter=NO, increase_blue_counter=NO, increase_magenta_counter=NO, increase_yellow_counter=NO'
+        )
     
-    # how does the flicker wheel output something?
-    # use flicker wheel only as counter?
+    model.bg_ic = spa.BasalGanglia(actions_ic)
+    model.thalamus_ic = spa.Thalamus(model.bg_ic)
+    
+    # for counter: can use one stepper per counter
+    # how to use vector convolved with itself? 
+    # or use analog clock counter? 
+    
+    trigger = nengo.Ensemble(
+        n_neurons=100,
+        dimensions=1
+    )
+
+    nengo.Connection(
+        model.increase_red_counter.output,
+        trigger,
+        transform=vocab["YES"].v.reshape(1, -1),
+        synapse=0.01
+    )
+    
+    trigger_node = nengo.Node(
+        lambda t, x: 1.0 if x > 0.8 else 0.0,
+        size_in=1
+    )
+    
+    nengo.Connection(trigger, trigger_node, synapse=0.01)
+    
+    counter = nengo.Ensemble(
+        n_neurons=200,
+        dimensions=1,
+        radius=10
+    )
+
+    tau = 0.1
+
+    # Memory
+    nengo.Connection(counter, counter, synapse=tau)
+
+    # Trigger increments counter
+    nengo.Connection(trigger_node, counter, synapse=tau)
     
     # current color != ahead color: use this to detect color switch? 
     
@@ -257,11 +326,6 @@ with model:
     # keep last_seen in memory
     # if new different second color or red
     # spike 1 and 
-    
-    # what about? node last seen == RED. Which broadcasts a 1 if it last seen red and 0 if not, to cancel out other signals
-
-    # use P3 spar 4.3 how to use: when flicker in input, cycle to next letter
-    #  
     
     # counter
     # 5 counters for 5 different colours. 
