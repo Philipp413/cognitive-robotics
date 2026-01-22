@@ -1,0 +1,163 @@
+\documentclass{article}
+\usepackage{fontspec}
+\usepackage[backend=biber,bibstyle=ieee,citestyle=numeric-comp,urldate=iso,seconds=true]{biblatex}
+\usepackage{caption}
+\usepackage{svg}
+\usepackage{alphabeta}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{lmodern}
+\usepackage{algorithm}
+\usepackage{tikz}
+\usepackage{multicol}
+\usepackage{bbding,enumitem}
+\usepackage{fancyhdr}
+\usepackage{geometry}
+\geometry{
+ left=1.5cm,
+ right=1.5cm,
+ top=2cm,
+ bottom=2cm
+}
+
+\usetikzlibrary{calc,cd}
+
+\addbibresource{bibliography.bib}
+
+\begin{document}
+
+\begin{center}
+    \Huge{Cognitive Robotics Project}
+\end{center}
+
+\section{A simple cognitive agent}
+
+Started by using drawio to make an overview of the cognitive agent. 
+Looking at spa, ensembles, the lecture slides and assignment solutions to get an overview of whats possible 
+
+\subsection{Movement}
+
+just changing the speed causes random walks
+-> could: possible directions and randomly pick one 
+
+\subsection{Converting to a Semantic Pointer}
+
+For using SPA, its necessarry to convert the sensor information into a semantic pointer. 
+This means converting a low dimensional vector into a high dimensional semantic pointer. 
+This proved to be more challenging than expected. 
+
+-> feed the input directly into a spa node, so we avoid having the ensemble in between that introduces more noise? or are we required to have an ensemble in between? 
+
+% Discrete 
+In my first attempt to convert the signal into a Semantic Pointer, I used a function on the connection from Node to \texttt{spa.State}. 
+In the function, I use the value of the three input channels to decide which one of the six semantic pointer in the vocabulary I return. 
+The function worked pretty well, and I amplify the signal with a scalar, to quickly switch to new colors. 
+I noticed that this is needed, because the agent initially went quite fast on straights and did not stay for very long on a color. So the signal was not strong enough to update the semantic pointer. 
+Furthermore, I slowed down the max speed of the agent to get the signal input for longer. 
+However, this is not robust for the case of getting an unknown color (as it will always be classified as one of the six) or to adapt to new colors.
+
+My next idea is to do a dot product of the signal with every semantic pointer in the vocabulary and then 
+pick the one that is closest by adding all the outputs, which acts as OR gate.
+But then you still need to hardcode all the possible colors, no? 
+
+for node into spa vector: transform=times color or times other color
+
+
+TODO: convert 0 to 1 colour input in -1 and 1 range to have large 
+
+\subsection{Converting from a Semantic Pointer}
+
+For example: multiply current semantic pointer with semantic pointer of "YES" and then output the 1 D scalar
+that represents how close the current semantic pointer is to "YES", which also represents "YES" in 1D. 
+
+\subsection{Decision making}
+
+This section is about taking the sensor information and how to process it, to arrive at the conclusion of whether to increase a counter. 
+
+use the change detector of stepper to detect if colors change? Or maybe the change is not quick enough? 
+
+-> is there a problem if we use multiple basil ganglia? 
+
+-> maybe have one "changed color boolean"? 
+
+problem in old spa: how to do and of different conditions? 
+-> either 0.5 * dot + 0.5 * dot
+or dot + dot -1 
+
+After seeing one color, there can be white tiles in between before the next. So keep looping color you have seen in memory? 
+Like evercise 4.2: keep looping last seen color, switch is then second color. And then second color becomes first color and wait for new switch
+for each colour that it encounters following red, it should count how often that happens
+Where to store the counters? In memory that decays? so counter resets eventually? 
+(last\_seen=RED x curr\_color=RED) and (seen\_white) -> redCounter +=1 
+(last\_seen=RED x curr\_color=Any different) -> Any different Counter +=1 
+else: dont change counter
+Problem: How to make sure that after red there is one white square before red again?
+seen\_white: maybe one ensemble that is just for counting if a white square has been visited, so 1. And goes to 0 if visit color
+
+Why is the look ahead color sensor useless? 
+If using look\_ahead() function:
+if current color is red, increase counter of look\_ahead by 1
+And then no need for memory of last seen color? 
+Problem: How to make sure that after red there is one white square before red again?
+
+what about: boolean takes some time to flip to true via 0.5* but then instantly goes back to false
+
+current color != ahead color: use this to detect color switch? 
+    
+flicker has switch, but node can also act as switch
+what to make of this? 
+
+How to build?
+keep streaming current color
+keep last seen in memory
+if new different second color or red
+spike 1 and 
+
+to compare two spa actions: use spa.Compare
+you should be able to just include  + cmp on the basal ganglia rule
+SPA system create a network cmp = spa.Compare(dimensions) and use two cortical rules cmp A = state1 and cmp B = state2.
+
+\subsection{Counter}
+
+for counter: can use one stepper per counter
+how to use vector convolved with itself? 
+or use analog clock counter? 
+
+analog clock counter:
+-> implement $\dot{x(t)} = u(t)$
+with x being counter value 
+and u the switch output 
+problem: how to send a pulse to the clock of the right length. 
+-> after setting to yes, quickly set vector back to NO 
+-> especially: what if multiple red or green? you keep increasing counter
+
+counter
+5 counters for 5 different colours. 
+lecturer: use SPA or another approach from lecture 6 - does he mean "exploiting multiple time scales"?
+need to get something to a high value to cause a change in the counter
+want the counter to go to a high enough value 
+look at how analog clocks do this
+
+convolving vector with one element with itself cycles element through
+use this as counter? 
+does this decay in memory? 
+better than using spa? 
+
+\section{Reflection}
+
+%reflect on the possibilities and limitations within cognitive robotics today
+
+% NEURA Robotics
+MAiRA, the world's first cognitive robot
+MAiRA is the worlds first commercially available cognitive robot. It perceives, learns, and adapts like a human, representing the evolution of cognitive robotics.
+cognitive intelligence:
+Multi-Modal Integration -Combines vision, voice, and touch inputs through on-device neural processing to achieve real-time situational awareness without relying on the cloud.
+Self-Optimization - Continuously refines performance through reinforcement learning and adapts autonomously to changing demands.
+
+Roboticists opinion: Robot should be a bit familiar, but not too much to avoid raising false expectations. 
+
+
+
+\end{document}
