@@ -267,14 +267,16 @@ with model:
     model.increase_magenta_counter = spa.State(D,vocab=vocab)
     model.increase_yellow_counter = spa.State(D,vocab=vocab)
     
-    actions_ic = spa.Actions( # TODO: maybe use spa and gate
-        'dot(seen_red, YES) + dot(cc, R) + dot(seen_white, YES) --> increase_red_counter=10*YES',
-        'dot(seen_red, YES) + dot(cc, G) --> increase_green_counter=10*YES',
-        'dot(seen_red, YES) + dot(cc, B) --> increase_blue_counter=10*YES',
-        'dot(seen_red, YES) + dot(cc, M) --> increase_magenta_counter=10*YES',
-        'dot(seen_red, YES) + dot(cc, Y) --> increase_yellow_counter=10*YES',
-        '0.5 --> increase_red_counter=NO, increase_green_counter=NO, increase_blue_counter=NO, increase_magenta_counter=NO, increase_yellow_counter=NO'
+    actions_ic = spa.Actions( 
+        '1/4 * dot(seen_red, YES) + 1/4 * dot(cc, R) + 1/4 * dot(seen_white, YES) --> increase_red_counter=3*YES, increase_green_counter=10*NO, increase_blue_counter=10*NO, increase_magenta_counter=10*NO, increase_yellow_counter=10*NO',
+        '0.5 * dot(seen_red, YES) + 0.5 * dot(cc, G) --> increase_green_counter=3*YES, increase_red_counter=10*NO, increase_blue_counter=10*NO, increase_magenta_counter=10*NO, increase_yellow_counter=10*NO',
+        '0.5 * dot(seen_red, YES) + 0.5 * dot(cc, B) --> increase_blue_counter=3*YES, increase_red_counter=10*NO, increase_green_counter=10*NO, increase_magenta_counter=10*NO, increase_yellow_counter=10*NO',
+        '0.5 * dot(seen_red, YES) + 0.5 * dot(cc, M) --> increase_magenta_counter=3*YES, increase_red_counter=10*NO, increase_green_counter=10*NO, increase_blue_counter=10*NO, increase_yellow_counter=10*NO',
+        '0.5 * dot(seen_red, YES) + 0.5 * dot(cc, Y) --> increase_yellow_counter=3*YES, increase_red_counter=10*NO, increase_green_counter=10*NO, increase_blue_counter=10*NO, increase_magenta_counter=10*NO',
+        '0.4 --> increase_red_counter=10*NO, increase_green_counter=10*NO, increase_blue_counter=10*NO, increase_magenta_counter=10*NO, increase_yellow_counter=10*NO'
         )
+    
+    # what about: boolean takes some time to flip to true via 0.5* but then instantly goes back to false
     
     model.bg_ic = spa.BasalGanglia(actions_ic)
     model.thalamus_ic = spa.Thalamus(model.bg_ic)
@@ -283,38 +285,123 @@ with model:
     # how to use vector convolved with itself? 
     # or use analog clock counter? 
     
+    tau = 0.1
+    
     trigger = nengo.Ensemble(
         n_neurons=100,
         dimensions=1
     )
-
     nengo.Connection(
-        model.increase_red_counter.output,
+        model.increase_red_counter.output, # (D,)
         trigger,
-        transform=vocab["YES"].v.reshape(1, -1),
+        transform=vocab["YES"].v.reshape(1, -1), # does (1,D) x (D,) = (1,). Checks output similarity with YES
         synapse=0.01
     )
-    
     trigger_node = nengo.Node(
-        lambda t, x: 1.0 if x > 0.8 else 0.0,
+        lambda t, x: 1.0 if x > 0.6 else 0.0,
         size_in=1
     )
-    
     nengo.Connection(trigger, trigger_node, synapse=0.01)
-    
     counter = nengo.Ensemble(
         n_neurons=200,
         dimensions=1,
         radius=10
     )
-
-    tau = 0.1
-
-    # Memory
-    nengo.Connection(counter, counter, synapse=tau)
-
-    # Trigger increments counter
-    nengo.Connection(trigger_node, counter, synapse=tau)
+    nengo.Connection(counter, counter, synapse=tau) # Memory
+    nengo.Connection(trigger_node, counter, synapse=tau) # # Trigger increments counter
+    
+    trigger_g = nengo.Ensemble(
+        n_neurons=100,
+        dimensions=1
+    )
+    nengo.Connection(
+        model.increase_green_counter.output, # (D,)
+        trigger_g,
+        transform=vocab["YES"].v.reshape(1, -1), # does (1,D) x (D,) = (1,). Checks output similarity with YES
+        synapse=0.01
+    )
+    trigger_node_g = nengo.Node(
+        lambda t, x: 1.0 if x > 0.8 else 0.0,
+        size_in=1
+    )
+    nengo.Connection(trigger_g, trigger_node_g, synapse=0.01)
+    counter_g = nengo.Ensemble(
+        n_neurons=200,
+        dimensions=1,
+        radius=10
+    )
+    nengo.Connection(counter_g, counter_g, synapse=tau)
+    nengo.Connection(trigger_node_g, counter_g, synapse=tau)
+    
+    trigger_b = nengo.Ensemble(
+        n_neurons=100,
+        dimensions=1
+    )
+    nengo.Connection(
+        model.increase_blue_counter.output, # (D,)
+        trigger_b,
+        transform=vocab["YES"].v.reshape(1, -1), # does (1,D) x (D,) = (1,). Checks output similarity with YES
+        synapse=0.01
+    )
+    trigger_node_b = nengo.Node(
+        lambda t, x: 1.0 if x > 0.8 else 0.0,
+        size_in=1
+    )
+    nengo.Connection(trigger_b, trigger_node_b, synapse=0.01)
+    counter_b = nengo.Ensemble(
+        n_neurons=200,
+        dimensions=1,
+        radius=10
+    )
+    nengo.Connection(counter_b, counter_b, synapse=tau)
+    nengo.Connection(trigger_node_b, counter_b, synapse=tau)
+    
+    trigger_m = nengo.Ensemble(
+        n_neurons=100,
+        dimensions=1
+    )
+    nengo.Connection(
+        model.increase_magenta_counter.output, # (D,)
+        trigger_m,
+        transform=vocab["YES"].v.reshape(1, -1), # does (1,D) x (D,) = (1,). Checks output similarity with YES
+        synapse=0.01
+    )
+    trigger_node_m = nengo.Node(
+        lambda t, x: 1.0 if x > 0.8 else 0.0,
+        size_in=1
+    )
+    nengo.Connection(trigger_m, trigger_node_m, synapse=0.01)
+    counter_m = nengo.Ensemble(
+        n_neurons=200,
+        dimensions=1,
+        radius=10
+    )
+    nengo.Connection(counter_m, counter_m, synapse=tau)
+    nengo.Connection(trigger_node_m, counter_m, synapse=tau)
+    
+    trigger_y = nengo.Ensemble(
+        n_neurons=100,
+        dimensions=1
+    )
+    nengo.Connection(
+        model.increase_yellow_counter.output, # (D,)
+        trigger_y,
+        transform=vocab["YES"].v.reshape(1, -1), # does (1,D) x (D,) = (1,). Checks output similarity with YES
+        synapse=0.01
+    )
+    trigger_node_y = nengo.Node(
+        lambda t, x: 1.0 if x > 0.8 else 0.0,
+        size_in=1
+    )
+    nengo.Connection(trigger_y, trigger_node_y, synapse=0.01)
+    counter_y = nengo.Ensemble(
+        n_neurons=200,
+        dimensions=1,
+        radius=10
+    )
+    nengo.Connection(counter_y, counter_y, synapse=tau)
+    nengo.Connection(trigger_node_y, counter_y, synapse=tau)
+    
     
     # current color != ahead color: use this to detect color switch? 
     
