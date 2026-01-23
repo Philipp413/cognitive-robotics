@@ -80,6 +80,17 @@ vocab.parse("YES+NO")
 vocab2 = spa.Vocabulary(D,max_similarity=0.1)
 vocab2.parse("G+R+M+Y+B+W")
 
+col_array = [col_values[c] for c in col_values]
+
+col_vocab = {
+    0: "W",
+    1: "G",
+    2: "R",
+    3: "B",
+    4: "M",
+    5: "Y",
+}
+
 with model:
     
     # create a node to connect to the world we have created (so we can see it)
@@ -154,38 +165,15 @@ with model:
     
     model.cc = spa.State(D,vocab=vocab2) # currently seen color by the agend
     
-    def signal_to_spa(xs):
-        """ Return spa vector corresponding to input
+    def signal_to_sp(x):
         
-        x - shape (3,)
+        distances = np.linalg.norm(col_array - x,axis=1)
         
-        111 -> W
-        010 -> G
-        100 -> R
-        001 -> B
-        101 -> M
-        110 -> Y
-        """
-        x,y,z = xs
+        sel_col = np.argmin(distances)
         
-        if x < 0.5:
-            # its G or B
-            if y < 0.5:
-                return 3*vocab2["B"].v.reshape(D,) 
-            return 3*vocab2["G"].v.reshape(D,) 
-        # its W, R, M, Y
-        if y < 0.5:
-            # its R or M
-            if z < 0.5:
-                return 3*vocab2["R"].v.reshape(D,) 
-            return 3*vocab2["M"].v.reshape(D,)    
-        # its W or Y
-        if z < 0.5:
-            return 3*vocab2["Y"].v.reshape(D,)
-            
-        return 3*vocab2["W"].v.reshape(D,)
+        return vocab2[col_vocab[sel_col]].v
     
-    nengo.Connection(current_color, model.cc.input,function=signal_to_spa)
+    nengo.Connection(current_color, model.cc.input,function=signal_to_sp)
     
     model.seen_red = spa.State(D,vocab=vocab) # if the agend has seen red as the last color
     
@@ -208,7 +196,7 @@ with model:
         '0.5 --> '
         )
     
-    model.bg = spa.BasalGanglia(actions)
+    model.bg = spa.BasalGanglia(actions,input_synapse=0.005)
     model.thalamus = spa.Thalamus(model.bg)
     
     model.seen_white = spa.State(D,vocab=vocab)
@@ -242,7 +230,7 @@ with model:
         '0.5 * dot(seen_red, YES) + 0.5 * dot(cc, B) --> increase_blue_counter=3*YES, increase_red_counter=10*NO, increase_green_counter=10*NO, increase_magenta_counter=10*NO, increase_yellow_counter=10*NO',
         '0.5 * dot(seen_red, YES) + 0.5 * dot(cc, M) --> increase_magenta_counter=3*YES, increase_red_counter=10*NO, increase_green_counter=10*NO, increase_blue_counter=10*NO, increase_yellow_counter=10*NO',
         '0.5 * dot(seen_red, YES) + 0.5 * dot(cc, Y) --> increase_yellow_counter=3*YES, increase_red_counter=10*NO, increase_green_counter=10*NO, increase_blue_counter=10*NO, increase_magenta_counter=10*NO',
-        '0.4 --> increase_red_counter=10*NO, increase_green_counter=10*NO, increase_blue_counter=10*NO, increase_magenta_counter=10*NO, increase_yellow_counter=10*NO'
+        '0.5 --> increase_red_counter=10*NO, increase_green_counter=10*NO, increase_blue_counter=10*NO, increase_magenta_counter=10*NO, increase_yellow_counter=10*NO'
         )
     
     model.bg_ic = spa.BasalGanglia(actions_ic)

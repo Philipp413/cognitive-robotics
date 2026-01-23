@@ -16,8 +16,8 @@
 \usepackage{fancyhdr}
 \usepackage{geometry}
 \geometry{
- left=1.5cm,
- right=1.5cm,
+ left=3cm,
+ right=3cm,
  top=2cm,
  bottom=2cm
 }
@@ -34,21 +34,47 @@
 
 \section{A simple cognitive agent}
 
-Started by using drawio to make an overview of the cognitive agent. 
-Looking at spa, ensembles, the lecture slides and assignment solutions to get an overview of whats possible 
+To design the cognitive agent, I started by going through the slides and assignments again, as well as the Nengo 
+documentation to get an overview of the possible tools and building blocks I can use to implement the agent.
+% My understanding of the problem
+Then I tried to properly understand the problem, the agent needs to solve. 
+In my understanding, the the task of the agent is to count how often it encountered a color, after seeing the color red.
+After can mean that it saw any number of white squares in between. Furthermore, seeing a color means any number of 
+color tiles adjacent to each other. For example, three red tiles, means it saw red and only when it moves on a green 
+square, the agent increases the counter for this pattern.
+An exception is if the agent sees red followed by white tiles and then red again. In this case the sequence, red-red 
+is counted.
+Keeping the problem definition in mind, I started by making different prototypes of the agents functionality
+in drawio. E.g. one prototype is given in Figure \ref{fig:prot}.  
+
+\begin{figure}[hb]
+    \centering
+    \includegraphics[scale=0.4]{figures/first_prototype.png}
+    \caption{Prototype of the cognitive agent in drawio.}
+    \label{fig:prot}
+\end{figure}
 
 \subsection{Movement}
 
-just changing the speed causes random walks
--> could: possible directions and randomly pick one 
+The default movement of the agent is a random walk, that is purely driven by the agent to avoid walls.
+In the default speed configuration, the agent always walks in circles in the map and starts making turns if you change 
+the speed, as its the no longer fast enough to get past certain turns. 
+In the project I did have time to implement more advanced movement strategies.
+One idea I had, would be to make the agent aware of the possible directions it can go and then make it 
+randomly choose a direction to go, once it is at a junction.
 
 \subsection{Converting to a Semantic Pointer}
 
 For using SPA, its necessarry to convert the sensor information into a semantic pointer. 
 This means converting a low dimensional vector into a high dimensional semantic pointer. 
 This proved to be more challenging than expected. 
-
--> feed the input directly into a spa node, so we avoid having the ensemble in between that introduces more noise? or are we required to have an ensemble in between? 
+In low dimension with noise its hard to distinguish colors.
+I realised that seperating such a representation into multiple classes (the colors) is the same problem that decision trees, support 
+vector machines and all kind of machine learning techniques are trying to solve. 
+For these techniques the input is often more than three dimensional, but the problem is still not easy to solve in three
+dimensions. For example: Lets say you get a noisy vector representing light yellow, that is the same (or almost) as yellow due to the noise.
+Does this mean the color is supposed to be yellow or is it still white yellow and your conversion function should consider the noise?
+What if the amount of noise is unknown to the agent? Like in many real world environments. 
 
 % Discrete 
 In my first attempt to convert the signal into a Semantic Pointer, I used a function on the connection from Node to \texttt{spa.State}. 
@@ -58,51 +84,81 @@ I noticed that this is needed, because the agent initially went quite fast on st
 Furthermore, I slowed down the max speed of the agent to get the signal input for longer. 
 However, this is not robust for the case of getting an unknown color (as it will always be classified as one of the six) or to adapt to new colors.
 
-My next idea is to do a dot product of the signal with every semantic pointer in the vocabulary and then 
-pick the one that is closest by adding all the outputs, which acts as OR gate.
-But then you still need to hardcode all the possible colors, no? 
+% Using cosine similarity
+In order to address this problem, my first idea was to do a dot product of the noisy sensor signal with the true rgb
+value of all the available colors, and then return the spa vector of the color the input is most similar two. 
+This however, did not work very well. After plotting the possible dot product against each other (see Figure \ref{fig:dot}), it becomes clear why.
+There are multiple cases where the dot product between input signal and true color is not the highest.
+For example, the noisy red signal is more similar to white than to red. 
+I did try converting the 0 to 1 colour input into a -1 and 1 range, which only brought small improvements.
+I realised that the transformation needs to be non-linear, as otherwise the dot product does not really change.
 
-for node into spa vector: transform=times color or times other color
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.5]{figures/dot_product.png}
+    \caption{Dot product of the noisy signal of the sensor and its true RGB representation. There are multiple cases where the dot product between input signal and true color is not the highest. For example, the noisy red signal is more similar to white than to red. }
+    \label{fig:dot}
+\end{figure}
 
+Looking at the lectures and assignments, I could not find any information on where this problem is solved.
+In exercise four of assignment three, the task is also about ensemble to semantic pointer conversion. However, in this case 
+it is just about converting a boolean signal to a boolean pointer. So this is easily solvable, by using the ensemble signal
+to either amplify or suppress the semantic pointer for "ON".
 
-TODO: convert 0 to 1 colour input in -1 and 1 range to have large 
+My best attempt to solve this issue is to replace the dot product with the norm. This results in very accurate conversions.
+This solution is now easily adaptible to new colors, but still needs a dictionary from rgb value to semantic pointer.
+
+% Future methods 
+One method that would definitely work but I considered to advanced for the course, is to let the agent first learn 
+a decorrelation matrix using the procedure outlined by Nasir et. al \cite{ahmad2025correlationsruininggradientdescent}, and then decorrelating the RGB matrix before 
+computing the dot product. 
 
 \subsection{Converting from a Semantic Pointer}
 
-For example: multiply current semantic pointer with semantic pointer of "YES" and then output the 1 D scalar
-that represents how close the current semantic pointer is to "YES", which also represents "YES" in 1D. 
+In the case of converting a boolean semantic pointer back to an ensemble, it is rather easy, as one can 
+use the semantic pointer to amplify the ensemble signal. 
+For different colors or counter values, I have not found a very satisfactory method yet. 
 
 \subsection{Decision making}
 
 This section is about taking the sensor information and how to process it, to arrive at the conclusion of whether to increase a counter. 
 
-use the change detector of stepper to detect if colors change? Or maybe the change is not quick enough? 
+% WITH SPA 
+My first approach was to use \texttt{nengo.spa} for this. 
 
--> is there a problem if we use multiple basil ganglia? 
+Boolean that switches on if the agent sees red and off if the agent sees any other color.
+Boolean that switches on if the agent sees white and off if the agent sees a color.
+
+To identitfy pairs of colors, have boolean seen red and the current color and the extra boolean 
+seen white for red-red sequences. 
+
+The idea: use seen red boolean and current color to decide whether to increase the counter.
+However, this means that seen red is not flipped until the counter decision has been made. 
+Therefore, I put a delay on the basal ganglia input. 
+
+We use the cleanup memory to remove the noise from the semantic pointer we want to store. 
+
+A problem in the old version of \texttt{nengo.spa}, is that you can not multiply the output of two dot products in order to 
+make an AND gate. Therefore, I had to resort to using $0.5 * dot(x,y) + 0.5 * dot(z,w)$, as done in the assignments.
+However, this is worse than using multiplication when using it to select actions. 
+TODO: does the values for action selection need to be between 0 and 1? 
+
+One problem was that the semantic pointer stayed for too long in the same state, so in order to prevent this I added 
+a large factor like 10, to the semantic pointer I want to change to, in order to quickly switch. 
+
+% Future ideas 
+
+use the change detector of stepper to detect if colors change? Or maybe the change is not quick enough? 
 
 -> maybe have one "changed color boolean"? 
 
-problem in old spa: how to do and of different conditions? 
--> either 0.5 * dot + 0.5 * dot
-or dot + dot -1 
+what about: boolean takes some time to flip to true via 0.5* but then instantly goes back to false
 
-After seeing one color, there can be white tiles in between before the next. So keep looping color you have seen in memory? 
-Like evercise 4.2: keep looping last seen color, switch is then second color. And then second color becomes first color and wait for new switch
-for each colour that it encounters following red, it should count how often that happens
-Where to store the counters? In memory that decays? so counter resets eventually? 
-(last\_seen=RED x curr\_color=RED) and (seen\_white) -> redCounter +=1 
-(last\_seen=RED x curr\_color=Any different) -> Any different Counter +=1 
-else: dont change counter
-Problem: How to make sure that after red there is one white square before red again?
-seen\_white: maybe one ensemble that is just for counting if a white square has been visited, so 1. And goes to 0 if visit color
+So far I am not using the sensor for the color that is ahead.  
 
-Why is the look ahead color sensor useless? 
-If using look\_ahead() function:
-if current color is red, increase counter of look\_ahead by 1
+If current color is red, increase counter of look\_ahead by 1
 And then no need for memory of last seen color? 
 Problem: How to make sure that after red there is one white square before red again?
-
-what about: boolean takes some time to flip to true via 0.5* but then instantly goes back to false
 
 current color != ahead color: use this to detect color switch? 
     
@@ -119,45 +175,135 @@ to compare two spa actions: use spa.Compare
 you should be able to just include  + cmp on the basal ganglia rule
 SPA system create a network cmp = spa.Compare(dimensions) and use two cortical rules cmp A = state1 and cmp B = state2.
 
+% WITHOUT SPA 
+
 \subsection{Counter}
 
-for counter: can use one stepper per counter
-how to use vector convolved with itself? 
-or use analog clock counter? 
+There are different ideas I had for how to implement the counter.
 
-analog clock counter:
--> implement $\dot{x(t)} = u(t)$
-with x being counter value 
-and u the switch output 
-problem: how to send a pulse to the clock of the right length. 
--> after setting to yes, quickly set vector back to NO 
--> especially: what if multiple red or green? you keep increasing counter
+% Using analog clock counter
+There is one idea I came accross while researching how analog clocks implement counters. 
+Namely, have an ensemble representing the counter value, with a recurrent connection with a small delay
+that keeps feeding in the current value. This ensures that the current counter value does not decay.
+Then the input signal, is presented for long enough to increase the counter by 1. 
+This makes it clear, that it requires a solution on how to send a pulse of the right length to the clock. 
+Especially, in the situation where the agent sees red, and then two green tiles, so it keeps setting the boolean to 
+true that indicates that the counter should be increased. 
 
-counter
-5 counters for 5 different colours. 
-lecturer: use SPA or another approach from lecture 6 - does he mean "exploiting multiple time scales"?
-need to get something to a high value to cause a change in the counter
-want the counter to go to a high enough value 
-look at how analog clocks do this
+TODO: how to fix this problem?
+Maybe have flicker that triggers node and if that node gets triggered it sends one second long signal to increase the counter?
 
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.4]{figures/analog_clock.png}
+    \caption{Imlementing a counter using an ensemble with recurrent connection to persist the count and an incoming connection to increase it. The count needs to receive input for the right amount of time, to prevent the count from increasing too much.}
+\end{figure}
+
+% Using flicker wheel in SPA
+
+Another option is to build on top of the stepper of the assignment that is using \texttt{nengo.spa}.
+Here a short flick, causes the counter to go into the next state. 
+A drawback would be that we would need one counter per pre-defined color (meaning we are not flexible for new colors) 
+and a maximum count we can count to, as this is equal to the vocabulary size of the spa state.
+
+TODO: how to get short flickering
+quickly setting a bool to on and then off again? 
+but how with two tiles of red? 
+
+% Using method clara shared 
+Lecture 13 slides.
+Encode any real value as exponent of a semantic pointer. 
+
+% convolve vector with itself like on slides of lecture 12
 convolving vector with one element with itself cycles element through
 use this as counter? 
 does this decay in memory? 
-better than using spa? 
+
+one spa state per counter 
+
+how to be versatile to not having a fixed number of counters per color? 
+
+represent integer $k$ as repeating unitary vector $k$ times, as in \textcite{komer_efficient_2020}. 
+$$
+B^k = \mathcal{F}^{-1}\{\mathcal{F}\{B\}^k\}
+$$
+
 
 \section{Reflection}
 
 %reflect on the possibilities and limitations within cognitive robotics today
+% cite references, e.g. mandatory reading papers 
+In the course we have seen many facets of cognitive robotics and spend much time on both debating different concepts
+and practically implementing cognitive agents in Nengo.
+Now it is time to take a step back and reflect on the possibilities and limitations within cognitive robotics today.
+% computational models
+One of the goals of cognitive robotics, is to make computational models of cognition. 
+Making this model is very challenging and often frustrating, considering that "all models are wrong" (George E P Box, 1987), as otherwise one would no longer have a model but the actual brain.
+In this regard, I agree with \textcite{mcclelland_place_2009}, that models are there to explore ideas, and not intended to fully capture all aspects of the brain in all details. 
+Consider as example, the model of the cricket that is there to understand how it crickets are able to distinguish who is chirping the loudest. 
+Like in maps, we need to make simplifications in our model all the time. 
+Conceptually, there are many different approaches to cognitive architectures as outlined in \textcite{cangelosi_cognitive_2022}.
+Cognitivist Approaches (Symbolic/Information Processing), view the mind as a computer that processes, stores, and retrieves information based on rules and symbols. It emphasizes "top-down" processing, where cognitive structures (schemas) guide behavior. It is often described as disembodied, focusing on abstract, logical, and symbolic reasoning.
+In my project I used a bit of a cognitivist approach, by having different variables that together orchestrate the functionality of the agent. 
+The Emergent Approach (Connectionist/Dynamical Systems) views cognition as a bottom-up, emergent property of neural activity, and interaction with the world. It asserts that "higher-level" cognitive functions (language, reasoning, categorization) are not pre-programmed but emerge from the interaction of simpler, distributed units. 
+One example of an emergent approache is the semantic pointer architecture \cite{spa_paper}, where meaning emerges from interaction
+with the world and other parts of the model.
+Import to note, hybrid approaches like ACT-R \cite{anderson2014rules} are also possible. 
+The answer on which cognitive architecture to use, lies probably somewhere in the middle and using a hybrid approach.
+One argument can be found by looking at our own body, some concepts and algorithms are pre-defined in our genes (the cognitivist part),
+while many other things evolve over time in exchange with the environment and in anticipation of what is to come (the emergent approach).
 
-% NEURA Robotics
-MAiRA, the world's first cognitive robot
-MAiRA is the worlds first commercially available cognitive robot. It perceives, learns, and adapts like a human, representing the evolution of cognitive robotics.
-cognitive intelligence:
-Multi-Modal Integration -Combines vision, voice, and touch inputs through on-device neural processing to achieve real-time situational awareness without relying on the cloud.
-Self-Optimization - Continuously refines performance through reinforcement learning and adapts autonomously to changing demands.
+\subsection{Cognitive robotics in practice}
+% using NEF 
+Turning our attention more to actual implementations used in cognitive robotics, its hard to not stumble over the Nengo framework
+that we also used in the course. 
+In the project we can see that Nenog and the Neural Engineering framework is very much focused on having different brain parts. 
+and clear distinctions between them. 
+For example, by dividing the task of counting color sequences into the task of remembering if red has been seen, the counter and other tasks.
+However, the brain combines many more functions together and often parts of the brain have multiple functions and having many emergent properties that are not possible to code top-down on the implementation level.
+Furthermore, the latest commit to Nengo Spa is more than three years ago, indicating that its tools might no longer be a promising direction to follow.
+% what if we used dynamic field theory?
+A prominent alternative approach we could have followed, would be Dynamic field theory, based on the Amari field equations \cite{amari_dynamics_1977}, 
+In comparison to the NEF, dynamic field theory is rather focused on average dynamics of large groups of neurons.
+Dynamic Field Theory represents values by where activity occurs in a neural field, while in comparison, the NEF represents values by how activity combines across neurons via decoders.
+E.g. In Dynamic Field Theory the orientation a neuron is sensitive to makes it directly clear what the neuron encodes, while in 
+Nengo you first need to decode the neuron.
+A concrete way of investigating the Dynamical Field theory, would be for example to show more cognitive features in Stabilized supralinear network \cite{kraynyukova_stabilized_2018}.
+% Embodied cognition 
+Independent of the choice between Dynamic Field theory and NEF, our project as well as the field of cognitive robotics should focus more on embodied cognition, especially enabled by recent technical advantages.
+Embodied cognition, meaning that the body as well as its internal dynamics \cite{STAPLETON20131} should be taken into account.
+One might argue, that the interaction between semantic pointers and memory, might already count as internal dynamics, however
+there is more necessarry to model the internal dynamics  
+Looking at sensory information, there has been many advancements on incorporating all five senses of humans 
+into a robot. Sight, sound, smell, taste, and touch.
+This is done successfully to various degrees, ranging from machine olfaction (allowing robot to smell) \cite{mershin2025machineolfactionembeddedai}
+to the M-Bot \cite{yu_all-printed_2022}, with skin that gives the robot a sense of feeling, to influencing the 
+decision making of robots based on its emotions \cite{lykov2024robotsfeelllmbasedframework}. 
+Most examples only implement a subset of the senses with only a few projects being able to implement almost all senses. 
+One noteworthy example is the German company MAiRA, which claims to be the worlds first commercially available cognitive robot, combining almost all sensory information, execpt smell.
+Turning our attention further to real worled applications, I believe its also more important to consider the human 
+robot interactions. And since technical advancements allow for much better robots than 10 years ago, it might not be too far off to 
+think about robots that go through a development phase, while being with their owner for a long time.
 
-Roboticists opinion: Robot should be a bit familiar, but not too much to avoid raising false expectations. 
+\begin{figure}
+    \centering
+    \includegraphics[scale=0.2]{figures/Picture1.jpg}
+    \caption{MAiRA robot. Advertised as the world's first commercially available cognitive robot.}
+\end{figure}
 
+\subsection{Future directions}
+% future directions
+It is hard to say where research should be headed next. Currently, cognitive robotics seems to also not be spared from the large 
+influence of advancements in large language models. Therefore, I predict that his will be a major driver. 
+This direction is very focused on mathematical tools and matrix vector multiplication. 
+In this case, the models often involve mathematical techniques designed for other purposes, that still accurately describe certain functions.
+Analagous to mathematical models that have nothing to do with the Helium energy levels but still turn out accurate.
+I think its important to also look for ideas outside of mathematics and more at what nature and our brain does.  
+A good starting point can be to build cognitive agents out of organic materials \cite{van_de_burgt_organic_2018}, 
+to make them also chemically more and more similar to us. 
+Last but not least, I think it should not be underestimated how important it is to look at the current technological possibilities and compute power available
+and revisit old ideas on whether they are now feasible to implement.
 
+\printbibliography
 
 \end{document}
